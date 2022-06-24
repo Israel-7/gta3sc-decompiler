@@ -77,13 +77,17 @@ struct Options {
     {}
 };
 
+struct commands {
+    std::string name;
+    uint32_t argsCount;
+    std::vector<byte> types;
+    bool allowPointer;
+};
+
 class output {
     WORD currentOpcode;
 
-    std::map<WORD, std::string> commands;
-    std::map<WORD, uint32_t> argsc;
-    std::map<WORD, std::vector<byte>> types;
-
+    std::map<WORD, commands> commands;
     std::vector<int> labelsOffsets;
 
     std::vector<int> ints;
