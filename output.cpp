@@ -99,7 +99,8 @@ size_t output::point() {
 }
 
 int output::argsCount() {
-    return argsc[currentOpcode];
+    return commands[currentOpcode].argsCount;
+    
 }
 
 void output::clear() {
@@ -144,7 +145,7 @@ bool output::addCommand(WORD opcode, script& sc_struct)
 {
     currentOpcode = opcode & 0x7FFF;
     
-    if (!commands[currentOpcode].empty())
+    if (!commands[currentOpcode].name.empty())
     {
         signed iBackup = (size_t)sc_struct.currBytes();
         std::string sBackup = out;
@@ -156,7 +157,7 @@ bool output::addCommand(WORD opcode, script& sc_struct)
         }
 
         if (!isCmdOperator()) {
-            printf(commands[currentOpcode].c_str());
+            printf(commands[currentOpcode].name.c_str());
         }
 
         auto counter = (argsCount() == -1 ? 35 : argsCount());
@@ -329,9 +330,9 @@ void output::addDword(DWORD param, size_t argIndex)
     case GET_LABEL_POINTER:
     case START_NEW_SCRIPT:
     case LAUNCH_MISSION:
-        if (types[currentOpcode].size() > 0)
+        if (commands[currentOpcode].types.size() > 0)
         {
-            if (types[currentOpcode][argIndex] == Types::_LABEL)
+            if (commands[currentOpcode].types[argIndex] == Types::_LABEL)
             {
                 if (std::find(labelsOffsets.begin(), labelsOffsets.end(), -(signed)param) == labelsOffsets.end()) {
                     labelsOffsets.push_back(-(signed)param);
@@ -365,12 +366,27 @@ void output::addWord(WORD param) {
 }
 
 void output::addLVar(WORD param, size_t argIndex) {
-    if (types[currentOpcode].size() > 0)
+    if (commands[currentOpcode].types.size() > 0)
     {
-        switch (types[currentOpcode][argIndex])
+        if (argIndex + 1 > commands[currentOpcode].types.size() || commands[currentOpcode].types[argIndex] == Types::_PARAM)
+        {
+            if (std::find(ints.begin(), ints.end(), param) != ints.end()) {
+                this->printf(" int%d", param);
+            }
+            else if (std::find(floats.begin(), floats.end(), param) != floats.end()) {
+                this->printf(" float%d", param);
+            }
+            else {
+                ints.push_back(param);
+                this->printf(" int%d", param);
+            }
+
+            return;
+        }
+
+        switch (commands[currentOpcode].types[argIndex])
         {
         case Types::_INT:
-        case Types::_PARAM:
             this->printf(" int%d", param);
 
             if (std::find(ints.begin(), ints.end(), param) == ints.end()) {
@@ -393,7 +409,10 @@ void output::addLVar(WORD param, size_t argIndex) {
             } else if (std::find(texts16.begin(), texts16.end(), param) != texts16.end()) {
                 this->printf(" $text16_%d", param);
             } else {
-                this->printf(" $int%d", param);
+                if (commands[currentOpcode].allowPointer)
+                    this->printf(" int%d", param);
+                else
+                    this->printf(" $int%d", param);
             }
         }
     }
@@ -409,7 +428,7 @@ void output::addLVarTextLabel(WORD param, size_t argIndex)
         texts.push_back(param);
     }
 
-    if (types[currentOpcode][argIndex] == Types::_STRING) {
+    if (commands[currentOpcode].types[argIndex] == Types::_STRING) {
         this->printf(" $text_%d", param);
     } else {
         this->printf(" text_%d", param);
@@ -515,20 +534,26 @@ output::output(Files f, Mode m, Options o) : files(f), mode(m), options(o)
             {
                 char *att = args->first_attribute("Type")->value();
 
-                if (!strcmp(att, "INT")) types[index].push_back(Types::_INT);
-                if (!strcmp(att, "FLOAT")) types[index].push_back(Types::_FLOAT);
-                if (!strcmp(att, "TEXT_LABEL")) types[index].push_back(Types::_TEXT_LABEL);
-                if (!strcmp(att, "STRING")) types[index].push_back(Types::_STRING);
-                if (!strcmp(att, "LABEL")) types[index].push_back(Types::_LABEL);
-                if (!strcmp(att, "CONSTANT")) types[index].push_back(Types::_CONSTANT);
-                if (!strcmp(att, "PARAM")) types[index].push_back(Types::_PARAM);
+                if (!strcmp(att, "INT")) commands[index].types.push_back(Types::_INT);
+                if (!strcmp(att, "FLOAT")) commands[index].types.push_back(Types::_FLOAT);
+                if (!strcmp(att, "TEXT_LABEL")) commands[index].types.push_back(Types::_TEXT_LABEL);
+                if (!strcmp(att, "STRING"))
+                {
+                    commands[index].types.push_back(Types::_STRING);
+
+                    auto ap = args->first_attribute("AllowPointer");
+                    commands[index].allowPointer = ap ? ap->value() : false;
+                }
+                if (!strcmp(att, "LABEL")) commands[index].types.push_back(Types::_LABEL);
+                if (!strcmp(att, "CONSTANT")) commands[index].types.push_back(Types::_CONSTANT);
+                if (!strcmp(att, "PARAM")) commands[index].types.push_back(Types::_PARAM);
 
                 if (argsCount != -1) argsCount++;
             }
         }
         
-        commands[index] = chil->first_attribute("Name")->value();
-        argsc[index] = argsCount;
+        commands[index].name = chil->first_attribute("Name")->value();
+        commands[index].argsCount = argsCount;
     }
 }
 
@@ -604,8 +629,8 @@ output::~output()
         temp.append("\n");
         out.insert(15, temp);
 
-        if (out.substr(out.length() - commands[0x0A93].length()) == commands[0x0A93]) {
-            out.erase(out.length() - commands[0x0A93].length() - 2);
+        if (out.substr(out.length() - commands[0x0A93].name.length()) == commands[0x0A93].name) {
+            out.erase(out.length() - commands[0x0A93].name.length() - 2);
         }
 
         if (mode == Mode::CS) {
